@@ -574,6 +574,14 @@
         if (byStatus[t.status]) byStatus[t.status].push(t);
       }
 
+      // Order each column like the CLI: priority first, then creation date.
+      const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+      for (const col of COLUMNS) {
+        byStatus[col.key].sort((a, b) =>
+          (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99) ||
+          String(a.created ?? '').localeCompare(String(b.created ?? '')));
+      }
+
       const boardHtml = COLUMNS.map(col => {
         const colTasks = byStatus[col.key] ?? [];
         const cards = colTasks.length

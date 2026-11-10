@@ -282,6 +282,115 @@
 
     .card:hover .card-open-hint { opacity: 1; }
 
+    /* ── Priority bands, epic panels, task groups ───── */
+
+    .band {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .band + .band { margin-top: 8px; }
+
+    .band-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 2px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+    }
+
+    .band-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .band-critical .band-dot { background: var(--color-critical); }
+    .band-high .band-dot     { background: var(--color-high); }
+    .band-medium .band-dot   { background: var(--color-medium); }
+    .band-low .band-dot      { background: var(--color-low); }
+
+    .band-count { font-weight: 500; opacity: 0.8; }
+
+    .epic-panel {
+      border: 1px solid #f1dfa8;
+      border-radius: 8px;
+      background: #fffaeb;
+      overflow: hidden;
+    }
+
+    .epic-header {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 5px 8px;
+      background: #fdf1c8;
+      border-bottom: 1px solid #f1dfa8;
+      color: #92400e;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .epic-header:hover { background: #fbe9ae; }
+
+    .epic-id {
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 10px;
+      opacity: 0.75;
+      flex-shrink: 0;
+    }
+
+    .epic-title {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .epic-status {
+      flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: #fff;
+      border: 1px solid #f1dfa8;
+    }
+
+    .epic-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 6px;
+    }
+
+    .task-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .subtree {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-left: 10px;
+      padding-left: 8px;
+      border-left: 2px solid #bcd9f0;
+    }
+
     .empty-col {
       font-size: 12px;
       color: var(--text-muted);
@@ -545,10 +654,10 @@
 
     // ── Board ──────────────────────────────────────
 
-    function renderCard(task) {
+    function renderCard(task, hideParent = false) {
       const tags = (task.tags ?? []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
-      const parent = task.parent
-        ? `<span class="parent-ref"><span class="parent-arrow">↑</span>${esc(task.parent)}</span>`
+      const parent = task.parent && !hideParent
+        ?`<span class="parent-ref"><span class="parent-arrow">↑</span>${esc(task.parent)}</span>`
         : '';
 
       return `
@@ -567,7 +676,109 @@
       `;
     }
 
+    // The epic a card belongs to, found by walking up its parents. Epics have none.
+    function epicOf(task, byId) {
+      if (task.type === 'epic') return null;
+      const visited = new Set();
+      let current = task;
+      while (current && current.parent && !visited.has(current.id)) {
+        visited.add(current.id);
+        const parent = byId[current.parent];
+        if (!parent) return null;
+        if (parent.type === 'epic') return parent;
+        current = parent;
+      }
+      return null;
+    }
+
+    // Cards of one column sharing a priority. Cards of the same epic go in one
+    // panel, and a card with children in the band gets them nested under it.
+    function renderBand(band, colKey, byId) {
+      const inBand = new Set(band.tasks.map(t => t.id));
+      const childrenOf = {};
+      const roots = [];
+      for (const t of band.tasks) {
+        const parent = t.parent ? byId[t.parent] : null;
+        if (parent && parent.type !== 'epic' && inBand.has(parent.id)) {
+          (childrenOf[parent.id] = childrenOf[parent.id] ?? []).push(t);
+        } else {
+          roots.push(t);
+        }
+      }
+
+      const rendered = new Set();
+      function renderTree(task, hideParent) {
+        rendered.add(task.id);
+        const card = renderCard(task, hideParent);
+        const kids = childrenOf[task.id] ?? [];
+        if (!kids.length) return card;
+        return `
+          <div class="task-group">
+            ${card}
+            <div class="subtree">${kids.map(k => renderTree(k, true)).join('')}</div>
+          </div>
+        `;
+      }
+
+      const panels = new Map();
+      const items = [];
+      for (const t of roots) {
+        const epic = epicOf(t, byId);
+        if (!epic) { items.push({ task: t }); continue; }
+        let panel = panels.get(epic.id);
+        if (!panel) { panel = { epic, roots: [] }; panels.set(epic.id, panel); items.push(panel); }
+        panel.roots.push(t);
+      }
+
+      // An epic with cards in this band is shown as the header of their panel.
+      const html = items
+        .filter(item => !(item.task && panels.has(item.task.id)))
+        .map(item => {
+          if (item.task) return renderTree(item.task, false);
+          const epic = item.epic;
+          const status = epic.status !== colKey
+            ? `<span class="epic-status">${esc(STATUS_LABELS[epic.status] ?? epic.status)}</span>`
+            : '';
+          rendered.add(epic.id);
+          return `
+            <div class="epic-panel">
+              <div class="epic-header" data-id="${esc(epic.id)}" title="${esc(epic.id + ' — ' + epic.title)}">
+                <span class="epic-id">${esc(epic.id)}</span>
+                <span class="epic-title">${esc(epic.title)}</span>${status}
+              </div>
+              <div class="epic-body">${item.roots.map(t => renderTree(t, t.parent === epic.id)).join('')}</div>
+            </div>
+          `;
+        }).join('');
+
+      // A parent cycle would leave cards unreachable; never drop them silently.
+      const orphans = band.tasks.filter(t => !rendered.has(t.id)).map(t => renderCard(t)).join('');
+
+      return `
+        <div class="band">
+          <div class="band-header band-${esc(band.priority)}">
+            <span class="band-dot"></span>
+            <span class="band-label">${esc(PRIORITY_LABELS[band.priority] ?? band.priority)}</span>
+            <span class="band-count">${band.tasks.length}</span>
+          </div>
+          ${html}${orphans}
+        </div>
+      `;
+    }
+
+    function renderColumnCards(colTasks, colKey, byId) {
+      const bands = [];
+      for (const t of colTasks) {
+        const last = bands[bands.length - 1];
+        if (last && last.priority === t.priority) last.tasks.push(t);
+        else bands.push({ priority: t.priority, tasks: [t] });
+      }
+      return bands.map(band => renderBand(band, colKey, byId)).join('');
+    }
+
     function renderBoard(tasks) {
+      const byId = {};
+      for (const t of tasks) byId[t.id] = t;
       const byStatus = {};
       for (const col of COLUMNS) byStatus[col.key] = [];
       for (const t of tasks) {
@@ -585,7 +796,7 @@
       const boardHtml = COLUMNS.map(col => {
         const colTasks = byStatus[col.key] ?? [];
         const cards = colTasks.length
-          ? colTasks.map(renderCard).join('')
+          ? renderColumnCards(colTasks, col.key, byId)
           : `<div class="empty-col">No tasks</div>`;
 
         return `
@@ -602,7 +813,7 @@
 
       document.getElementById('board-wrapper').innerHTML = `<div class="board">${boardHtml}</div>`;
 
-      document.querySelectorAll('.card').forEach(card => {
+      document.querySelectorAll('.card, .epic-header').forEach(card => {
         card.addEventListener('click', () => openDetail(card.dataset.id));
       });
     }

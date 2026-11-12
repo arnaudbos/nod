@@ -659,6 +659,27 @@
       border: 1px solid var(--border);
     }
 
+    .task-link {
+      color: var(--color-select);
+      text-decoration: none;
+      border-radius: 3px;
+      white-space: nowrap; /* don't break an id at its hyphen */
+      cursor: pointer;
+    }
+
+    .task-link:hover {
+      text-decoration: underline;
+      background: rgba(35, 131, 226, 0.08);
+    }
+
+    .prop-related {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 10px;
+      font-family: 'Menlo', 'Monaco', monospace;
+      font-size: 12px;
+    }
+
     .panel-loading {
       font-size: 13px;
       color: var(--text-muted);
@@ -985,6 +1006,7 @@
       document.getElementById('panel-task-id').textContent = id;
       document.getElementById('panel-content').innerHTML =
         '<div class="panel-loading">Loading…</div>';
+      document.getElementById('detail-panel').scrollTop = 0;
       refreshPanel(id);
     }
 
@@ -1000,12 +1022,54 @@
         const res = await fetch(`/api/task/${encodeURIComponent(id)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const { task } = await res.json();
+        if (activePanelId !== id) return; // the panel moved on while this loaded
         renderPanel(task);
       } catch (err) {
+        if (activePanelId !== id) return;
         document.getElementById('panel-content').innerHTML =
           `<div class="error-banner">Error loading task: ${esc(err.message)}</div>`;
       }
     }
+
+    // ── Task links ────────────────────────────────
+
+    // Anything shaped like a task id (epic-1, subtask-6, …). Only ids that match
+    // an existing task become links, so lookalikes and deleted tasks stay text.
+    const TASK_REF = /(?<![\w-])[a-z]+-\d+(?![\w-])/g;
+
+    function taskLink(id) {
+      const target = allTasks.find(t => t.id === id);
+      if (!target) return esc(id);
+      return `<a class="task-link" href="#${esc(id)}" data-task-link="${esc(id)}" title="${esc(target.title)}">${esc(id)}</a>`;
+    }
+
+    // Escapes `text` and turns each mention of another task into a link.
+    function withTaskLinks(text, selfId) {
+      let out = '';
+      let last = 0;
+      for (const m of text.matchAll(TASK_REF)) {
+        if (m[0] === selfId || !allTasks.some(t => t.id === m[0])) continue;
+        out += esc(text.slice(last, m.index)) + taskLink(m[0]);
+        last = m.index + m[0].length;
+      }
+      return out + esc(text.slice(last));
+    }
+
+    // Follow a link: select the task on the board and show it in the panel.
+    function goToTask(id) {
+      selectedId = id;
+      applyHighlight();
+      document.querySelector('.card.is-selected, .epic-header.is-selected')
+        ?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      openDetail(id);
+    }
+
+    document.getElementById('panel-content').addEventListener('click', e => {
+      const link = e.target.closest('a[data-task-link]');
+      if (!link) return;
+      e.preventDefault();
+      goToTask(link.dataset.taskLink);
+    });
 
     function renderPanel(task) {
       const tags = (task.tags ?? []).length
@@ -1022,11 +1086,11 @@
         .join('');
 
       const bodyHtml = task.body?.trim()
-        ? `<div class="panel-body-text">${esc(task.body.trim())}</div>`
+        ? `<div class="panel-body-text">${withTaskLinks(task.body.trim(), task.id)}</div>`
         : `<div class="panel-body-text" style="color:var(--text-muted);font-style:italic">No description.</div>`;
 
       document.getElementById('panel-content').innerHTML = `
-        <div class="panel-title">${esc(task.title)}</div>
+        <div class="panel-title">${withTaskLinks(task.title, task.id)}</div>
         <div class="panel-props">
           <div class="prop-row">
             <span class="prop-label">Status</span>
@@ -1046,10 +1110,15 @@
             <span class="prop-label">Parent</span>
             <span class="prop-value" style="${!task.parent ? 'color:var(--text-muted)' : ''}">
               ${task.parent
-                ? `<span style="font-family:monospace;font-size:12px">${esc(task.parent)}</span>`
+                ? `<span style="font-family:monospace;font-size:12px">${taskLink(task.parent)}</span>`
                 : '—'}
             </span>
           </div>
+          ${(task.related ?? []).length ? `
+          <div class="prop-row">
+            <span class="prop-label">Related</span>
+            <span class="prop-value prop-related">${task.related.map(taskLink).join('')}</span>
+          </div>` : ''}
           <div class="prop-row">
             <span class="prop-label">Tags</span>
             ${tags}

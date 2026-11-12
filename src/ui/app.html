@@ -270,17 +270,73 @@
       border: 1px solid var(--border);
     }
 
-    .card-open-hint {
-      position: absolute;
-      right: 10px;
-      bottom: 10px;
-      font-size: 12px;
+    /* Arrow button that opens the detail panel (cards and epic headers). */
+    .open-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: none;
       color: var(--text-muted);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
       opacity: 0;
-      transition: opacity 0.15s ease;
+      transition: opacity 0.15s ease, background 0.1s, border-color 0.1s, color 0.1s;
     }
 
-    .card:hover .card-open-hint { opacity: 1; }
+    .open-btn:hover,
+    .open-btn:focus-visible {
+      background: #ebebe8;
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .card .open-btn {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+    }
+
+    .epic-header .open-btn {
+      align-self: center;
+      width: 18px;
+      height: 18px;
+      margin: -3px 0;
+      font-size: 11px;
+      color: #a39568;
+    }
+
+    .card:hover .open-btn,
+    .card.is-selected .open-btn,
+    .epic-header:hover .open-btn,
+    .epic-header.is-selected .open-btn,
+    .open-btn:focus-visible { opacity: 1; }
+
+    /* ── Selection: highlight the selected task's descendants, dim the rest ── */
+
+    :root { --color-select: #2383e2; }
+
+    .board.has-selection .card,
+    .board.has-selection .epic-header {
+      opacity: 0.3;
+      transition: opacity 0.15s ease, background 0.1s, box-shadow 0.15s ease;
+    }
+
+    .board.has-selection .card.is-selected,
+    .board.has-selection .card.is-related,
+    .board.has-selection .epic-header.is-selected,
+    .board.has-selection .epic-header.is-related { opacity: 1; }
+
+    .card.is-selected          { box-shadow: 0 0 0 2px var(--color-select), 0 2px 8px rgba(0,0,0,0.1); }
+    .card.is-related           { box-shadow: 0 0 0 1px rgba(35, 131, 226, 0.5); }
+    .epic-header.is-selected   { box-shadow: inset 0 0 0 2px var(--color-select); }
+    .epic-header.is-related    { box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.5); }
 
     /* ── Priority bands, epic panels, task groups ───── */
 
@@ -318,38 +374,41 @@
 
     .band-count { font-weight: 500; opacity: 0.8; }
 
-    .epic-panel {
-      border: 1px solid #f1dfa8;
-      border-radius: 8px;
-      background: #fffaeb;
-      overflow: hidden;
+    /* The epic is context for the cards under it, so it's a quiet header line
+       with a thin rule down its cards, not a box around them. */
+    .epic-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-left: 7px;
+      border-left: 2px solid #e8d9a4;
     }
 
     .epic-header {
       display: flex;
       align-items: baseline;
       gap: 6px;
-      padding: 5px 8px;
-      background: #fdf1c8;
-      border-bottom: 1px solid #f1dfa8;
-      color: #92400e;
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #7c6a3c;
       font-size: 11px;
       cursor: pointer;
+      transition: background 0.1s;
     }
 
-    .epic-header:hover { background: #fbe9ae; }
+    .epic-header:hover { background: rgba(207, 144, 6, 0.1); }
 
     .epic-id {
       font-family: 'Menlo', 'Monaco', monospace;
       font-size: 10px;
-      opacity: 0.75;
+      color: #b0a278;
       flex-shrink: 0;
     }
 
     .epic-title {
       flex: 1;
       min-width: 0;
-      font-weight: 600;
+      font-weight: 500;
       line-height: 1.3;
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -365,30 +424,8 @@
       letter-spacing: 0.4px;
       padding: 1px 5px;
       border-radius: 3px;
-      background: #fff;
-      border: 1px solid #f1dfa8;
-    }
-
-    .epic-body {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding: 6px;
-    }
-
-    .task-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .subtree {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-left: 10px;
-      padding-left: 8px;
-      border-left: 2px solid #bcd9f0;
+      color: #a39568;
+      border: 1px solid #efe5c2;
     }
 
     .empty-col {
@@ -429,11 +466,15 @@
 
     #overlay.open { display: block; opacity: 1; }
 
+    /* A third of the screen, but never narrower than 440px. Dragging the handle
+       overrides this with a fixed width (see "Panel resize" in the script). */
+    :root { --panel-width: max(440px, 33.333vw); }
+
     #detail-panel {
       position: fixed;
       top: 0;
       right: 0;
-      width: 440px;
+      width: var(--panel-width);
       height: 100vh;
       background: #fff;
       z-index: 101;
@@ -447,6 +488,39 @@
     }
 
     #detail-panel.open { transform: translateX(0); }
+
+    /* Drag handle on the panel's left edge. A sibling of the panel rather than a
+       child, so it doesn't scroll away with the panel's content. */
+    #panel-resizer {
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      right: calc(var(--panel-width) - 3px);
+      width: 6px;
+      z-index: 102;
+      cursor: col-resize;
+      touch-action: none;
+      display: none;
+    }
+
+    #panel-resizer.open { display: block; }
+
+    #panel-resizer::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 2px;
+      width: 2px;
+      background: var(--color-select);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    #panel-resizer:hover::after,
+    #panel-resizer.dragging::after { opacity: 0.6; }
+
+    body.resizing { cursor: col-resize; user-select: none; }
 
     .panel-toolbar {
       display: flex;
@@ -613,6 +687,7 @@
   </div>
 
   <div id="overlay"></div>
+  <div id="panel-resizer" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
   <div id="detail-panel">
     <div class="panel-toolbar">
       <span class="panel-task-id" id="panel-task-id">—</span>
@@ -645,6 +720,7 @@
 
     let allTasks = [];
     let activePanelId = null;
+    let selectedId = null; // card whose descendants are highlighted on the board
 
     function esc(str) {
       return String(str ?? '')
@@ -671,7 +747,7 @@
           </div>
           <div class="card-title">${esc(task.title)}</div>
           <div class="card-footer">${parent}${tags}</div>
-          <span class="card-open-hint">→</span>
+          <button class="open-btn" type="button" title="Open details" aria-label="Open details">→</button>
         </div>
       `;
     }
@@ -691,9 +767,10 @@
       return null;
     }
 
-    // Cards of one column sharing a priority. Cards of the same epic go in one
-    // panel, and a card with children in the band gets them nested under it.
+    // Cards of one column sharing a priority. Cards of the same epic are stacked
+    // under one header, and a card's children in the band follow it directly.
     function renderBand(band, colKey, byId) {
+      // Children go right after their parent, but are not indented.
       const inBand = new Set(band.tasks.map(t => t.id));
       const childrenOf = {};
       const roots = [];
@@ -705,54 +782,48 @@
           roots.push(t);
         }
       }
-
-      const rendered = new Set();
-      function renderTree(task, hideParent) {
-        rendered.add(task.id);
-        const card = renderCard(task, hideParent);
-        const kids = childrenOf[task.id] ?? [];
-        if (!kids.length) return card;
-        return `
-          <div class="task-group">
-            ${card}
-            <div class="subtree">${kids.map(k => renderTree(k, true)).join('')}</div>
-          </div>
-        `;
+      const ordered = [];
+      const seen = new Set();
+      function visit(task) {
+        if (seen.has(task.id)) return;
+        seen.add(task.id);
+        ordered.push(task);
+        (childrenOf[task.id] ?? []).forEach(visit);
       }
+      roots.forEach(visit);
+      band.tasks.forEach(visit); // a parent cycle has no root; never drop its cards
 
-      const panels = new Map();
+      // A group sits where its first card would have been.
+      const groups = new Map();
       const items = [];
-      for (const t of roots) {
+      for (const t of ordered) {
         const epic = epicOf(t, byId);
         if (!epic) { items.push({ task: t }); continue; }
-        let panel = panels.get(epic.id);
-        if (!panel) { panel = { epic, roots: [] }; panels.set(epic.id, panel); items.push(panel); }
-        panel.roots.push(t);
+        let group = groups.get(epic.id);
+        if (!group) { group = { epic, tasks: [] }; groups.set(epic.id, group); items.push(group); }
+        group.tasks.push(t);
       }
 
-      // An epic with cards in this band is shown as the header of their panel.
+      // An epic with cards in this band is shown as the header of their group.
       const html = items
-        .filter(item => !(item.task && panels.has(item.task.id)))
+        .filter(item => !(item.task && groups.has(item.task.id)))
         .map(item => {
-          if (item.task) return renderTree(item.task, false);
+          if (item.task) return renderCard(item.task);
           const epic = item.epic;
           const status = epic.status !== colKey
             ? `<span class="epic-status">${esc(STATUS_LABELS[epic.status] ?? epic.status)}</span>`
             : '';
-          rendered.add(epic.id);
           return `
-            <div class="epic-panel">
+            <div class="epic-group">
               <div class="epic-header" data-id="${esc(epic.id)}" title="${esc(epic.id + ' — ' + epic.title)}">
                 <span class="epic-id">${esc(epic.id)}</span>
                 <span class="epic-title">${esc(epic.title)}</span>${status}
+                <button class="open-btn" type="button" title="Open details" aria-label="Open details">→</button>
               </div>
-              <div class="epic-body">${item.roots.map(t => renderTree(t, t.parent === epic.id)).join('')}</div>
+              ${item.tasks.map(t => renderCard(t, t.parent === epic.id)).join('')}
             </div>
           `;
         }).join('');
-
-      // A parent cycle would leave cards unreachable; never drop them silently.
-      const orphans = band.tasks.filter(t => !rendered.has(t.id)).map(t => renderCard(t)).join('');
 
       return `
         <div class="band">
@@ -761,7 +832,7 @@
             <span class="band-label">${esc(PRIORITY_LABELS[band.priority] ?? band.priority)}</span>
             <span class="band-count">${band.tasks.length}</span>
           </div>
-          ${html}${orphans}
+          ${html}
         </div>
       `;
     }
@@ -812,11 +883,61 @@
       }).join('');
 
       document.getElementById('board-wrapper').innerHTML = `<div class="board">${boardHtml}</div>`;
+      applyHighlight();
+    }
 
-      document.querySelectorAll('.card, .epic-header').forEach(card => {
-        card.addEventListener('click', () => openDetail(card.dataset.id));
+    // ── Selection ──────────────────────────────────
+
+    // Every task below `rootId`, at any depth (epic → tasks → subtasks).
+    function descendantIds(rootId) {
+      const childrenOf = {};
+      for (const t of allTasks) {
+        if (t.parent) (childrenOf[t.parent] = childrenOf[t.parent] ?? []).push(t.id);
+      }
+      const found = new Set();
+      const stack = [rootId];
+      while (stack.length) {
+        for (const id of childrenOf[stack.pop()] ?? []) {
+          if (id === rootId || found.has(id)) continue; // guards against parent cycles
+          found.add(id);
+          stack.push(id);
+        }
+      }
+      return found;
+    }
+
+    // Marks the DOM in place, so the 3s refresh can re-apply it after a re-render.
+    // The same task can appear twice (as an epic panel header and as a card).
+    function applyHighlight() {
+      const board = document.querySelector('.board');
+      if (!board) return;
+      if (selectedId && !allTasks.some(t => t.id === selectedId)) selectedId = null;
+      const related = selectedId ? descendantIds(selectedId) : new Set();
+      board.classList.toggle('has-selection', selectedId !== null);
+      board.querySelectorAll('.card, .epic-header').forEach(el => {
+        el.classList.toggle('is-selected', el.dataset.id === selectedId);
+        el.classList.toggle('is-related', related.has(el.dataset.id));
       });
     }
+
+    // Selecting the selected card again deselects it.
+    function selectTask(id) {
+      selectedId = id === selectedId ? null : id;
+      applyHighlight();
+    }
+
+    function clearSelection() {
+      selectedId = null;
+      applyHighlight();
+    }
+
+    // One delegated listener: the board's DOM is rebuilt on every refresh.
+    document.getElementById('board-wrapper').addEventListener('click', e => {
+      const item = e.target.closest('.card, .epic-header');
+      if (!item) return clearSelection(); // clicked empty space
+      if (e.target.closest('.open-btn')) return openDetail(item.dataset.id);
+      selectTask(item.dataset.id);
+    });
 
     async function fetchTasks() {
       try {
@@ -860,6 +981,7 @@
       activePanelId = id;
       document.getElementById('overlay').classList.add('open');
       document.getElementById('detail-panel').classList.add('open');
+      document.getElementById('panel-resizer').classList.add('open');
       document.getElementById('panel-task-id').textContent = id;
       document.getElementById('panel-content').innerHTML =
         '<div class="panel-loading">Loading…</div>';
@@ -870,6 +992,7 @@
       activePanelId = null;
       document.getElementById('overlay').classList.remove('open');
       document.getElementById('detail-panel').classList.remove('open');
+      document.getElementById('panel-resizer').classList.remove('open');
     }
 
     async function refreshPanel(id) {
@@ -954,7 +1077,61 @@
 
     document.getElementById('panel-close').addEventListener('click', closeDetail);
     document.getElementById('overlay').addEventListener('click', closeDetail);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (activePanelId) closeDetail();
+      else clearSelection();
+    });
+
+    // ── Panel resize ──────────────────────────────
+    // By default the panel is a third of the screen (see --panel-width in the CSS).
+    // 440px is the minimum, so it can be dragged wider but never narrower than that.
+
+    const PANEL_MIN_WIDTH = 440;
+    const PANEL_MARGIN = 40; // always leave a strip of board (and overlay) visible
+    const PANEL_WIDTH_KEY = 'nod.panelWidth';
+    let panelWidth = null; // px once the user has dragged it; null = the default width
+
+    function setPanelWidth(width) {
+      const max = Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_MARGIN);
+      panelWidth = Math.round(Math.min(max, Math.max(PANEL_MIN_WIDTH, width)));
+      document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
+    }
+
+    try {
+      const saved = parseInt(localStorage.getItem(PANEL_WIDTH_KEY), 10);
+      if (saved) setPanelWidth(saved);
+    } catch { /* storage unavailable: keep the default */ }
+
+    window.addEventListener('resize', () => {
+      if (panelWidth !== null) setPanelWidth(panelWidth); // re-clamp to the new viewport
+    });
+
+    (function () {
+      const handle = document.getElementById('panel-resizer');
+
+      handle.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add('dragging');
+        document.body.classList.add('resizing');
+      });
+
+      handle.addEventListener('pointermove', e => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        setPanelWidth(window.innerWidth - e.clientX);
+      });
+
+      const stop = e => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        handle.releasePointerCapture(e.pointerId);
+        handle.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth)); } catch { /* ignore */ }
+      };
+      handle.addEventListener('pointerup', stop);
+      handle.addEventListener('pointercancel', stop);
+    })();
 
     document.getElementById('seed-btn').addEventListener('click', async () => {
       const btn = document.getElementById('seed-btn');

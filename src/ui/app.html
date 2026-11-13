@@ -270,7 +270,7 @@
       border: 1px solid var(--border);
     }
 
-    /* Arrow button that opens the detail panel (cards and epic headers). */
+    /* Arrow button that opens the detail panel (cards and group headers). */
     .open-btn {
       display: inline-flex;
       align-items: center;
@@ -303,19 +303,21 @@
       bottom: 6px;
     }
 
-    .epic-header .open-btn {
+    .group-header .open-btn {
       align-self: center;
       width: 18px;
       height: 18px;
       margin: -3px 0;
       font-size: 11px;
-      color: #a39568;
     }
+
+    .epic-header .open-btn { color: #a39568; }
+    .task-header .open-btn { color: #7f9ab5; }
 
     .card:hover .open-btn,
     .card.is-selected .open-btn,
-    .epic-header:hover .open-btn,
-    .epic-header.is-selected .open-btn,
+    .group-header:hover .open-btn,
+    .group-header.is-selected .open-btn,
     .open-btn:focus-visible { opacity: 1; }
 
     /* ── Selection: highlight the selected task's descendants, dim the rest ── */
@@ -323,20 +325,20 @@
     :root { --color-select: #2383e2; }
 
     .board.has-selection .card,
-    .board.has-selection .epic-header {
+    .board.has-selection .group-header {
       opacity: 0.3;
       transition: opacity 0.15s ease, background 0.1s, box-shadow 0.15s ease;
     }
 
     .board.has-selection .card.is-selected,
     .board.has-selection .card.is-related,
-    .board.has-selection .epic-header.is-selected,
-    .board.has-selection .epic-header.is-related { opacity: 1; }
+    .board.has-selection .group-header.is-selected,
+    .board.has-selection .group-header.is-related { opacity: 1; }
 
     .card.is-selected          { box-shadow: 0 0 0 2px var(--color-select), 0 2px 8px rgba(0,0,0,0.1); }
     .card.is-related           { box-shadow: 0 0 0 1px rgba(35, 131, 226, 0.5); }
-    .epic-header.is-selected   { box-shadow: inset 0 0 0 2px var(--color-select); }
-    .epic-header.is-related    { box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.5); }
+    .group-header.is-selected  { box-shadow: inset 0 0 0 2px var(--color-select); }
+    .group-header.is-related   { box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.5); }
 
     /* ── Priority bands, epic panels, task groups ───── */
 
@@ -374,38 +376,52 @@
 
     .band-count { font-weight: 500; opacity: 0.8; }
 
-    /* The epic is context for the cards under it, so it's a quiet header line
-       with a thin rule down its cards, not a box around them. */
-    .epic-group {
+    /* An ancestor (epic, or the parent task of subtasks) is context for the cards
+       under it, so it's a quiet header line with a thin rule down its cards, not
+       a box around them. Headers stack: epic, then task, then the card. */
+    .epic-group,
+    .task-group {
       display: flex;
       flex-direction: column;
       gap: 6px;
       padding-left: 7px;
-      border-left: 2px solid #e8d9a4;
+      border-left: 2px solid;
     }
 
-    .epic-header {
+    .epic-group { border-left-color: #e8d9a4; }
+    .task-group { border-left-color: #cfe2f3; }
+
+    .group-header {
       display: flex;
       align-items: baseline;
       gap: 6px;
       padding: 1px 4px;
       border-radius: 4px;
-      color: #7c6a3c;
       font-size: 11px;
       cursor: pointer;
       transition: background 0.1s;
     }
 
-    .epic-header:hover { background: rgba(207, 144, 6, 0.1); }
+    .epic-header { color: #7c6a3c; }
+    .task-header { color: #4d6d8c; }
 
-    .epic-id {
+    /* Task headers sit one level deeper, so there's less room: if the status chip
+       doesn't fit beside the title, it wraps below instead of squeezing the title. */
+    .task-header { flex-wrap: wrap; row-gap: 2px; }
+    .task-header .group-title { flex: 1 1 110px; }
+    .epic-header:hover { background: rgba(207, 144, 6, 0.1); }
+    .task-header:hover { background: rgba(10, 133, 209, 0.08); }
+
+    .group-id {
       font-family: 'Menlo', 'Monaco', monospace;
       font-size: 10px;
-      color: #b0a278;
       flex-shrink: 0;
     }
 
-    .epic-title {
+    .epic-header .group-id { color: #b0a278; }
+    .task-header .group-id { color: #8fa9c4; }
+
+    .group-title {
       flex: 1;
       min-width: 0;
       font-weight: 500;
@@ -416,7 +432,7 @@
       overflow: hidden;
     }
 
-    .epic-status {
+    .group-status {
       flex-shrink: 0;
       font-size: 9px;
       font-weight: 500;
@@ -424,9 +440,11 @@
       letter-spacing: 0.4px;
       padding: 1px 5px;
       border-radius: 3px;
-      color: #a39568;
-      border: 1px solid #efe5c2;
+      border: 1px solid;
     }
+
+    .epic-header .group-status { color: #a39568; border-color: #efe5c2; }
+    .task-header .group-status { color: #7f9ab5; border-color: #dbe8f4; }
 
     .empty-col {
       font-size: 12px;
@@ -773,78 +791,76 @@
       `;
     }
 
-    // The epic a card belongs to, found by walking up its parents. Epics have none.
-    function epicOf(task, byId) {
-      if (task.type === 'epic') return null;
-      const visited = new Set();
+    // The ancestors a card is shown under, outermost first: its epic (if it has
+    // one) and the tasks between that epic and the card. Empty if the parents
+    // form a cycle, so those cards are shown flat rather than lost.
+    function headerChain(task, byId) {
+      const chain = [];
+      const visited = new Set([task.id]);
       let current = task;
-      while (current && current.parent && !visited.has(current.id)) {
-        visited.add(current.id);
+      while (current.parent) {
         const parent = byId[current.parent];
-        if (!parent) return null;
-        if (parent.type === 'epic') return parent;
+        if (!parent) break; // dangling parent: nothing to show a header for
+        if (visited.has(parent.id)) return [];
+        visited.add(parent.id);
+        chain.unshift(parent);
+        if (parent.type === 'epic') break;
         current = parent;
       }
-      return null;
+      return chain;
     }
 
-    // Cards of one column sharing a priority. Cards of the same epic are stacked
-    // under one header, and a card's children in the band follow it directly.
+    function renderGroupHeader(task, colKey) {
+      const kind = task.type === 'epic' ? 'epic' : 'task';
+      const status = task.status !== colKey
+        ? `<span class="group-status">${esc(STATUS_LABELS[task.status] ?? task.status)}</span>`
+        : '';
+      return `
+        <div class="group-header ${kind}-header" data-id="${esc(task.id)}" title="${esc(task.id + ' — ' + task.title)}">
+          <span class="group-id">${esc(task.id)}</span>
+          <span class="group-title">${esc(task.title)}</span>${status}
+          <button class="open-btn" type="button" title="Open details" aria-label="Open details">→</button>
+        </div>
+      `;
+    }
+
+    // Cards of one column sharing a priority. Each card is stacked under the
+    // headers of its ancestors (epic, then parent task). A task that has cards
+    // under it in this band is shown as their header instead of as a card.
     function renderBand(band, colKey, byId) {
-      // Children go right after their parent, but are not indented.
-      const inBand = new Set(band.tasks.map(t => t.id));
-      const childrenOf = {};
-      const roots = [];
+      const chains = new Map();
+      const asHeader = new Set();
       for (const t of band.tasks) {
-        const parent = t.parent ? byId[t.parent] : null;
-        if (parent && parent.type !== 'epic' && inBand.has(parent.id)) {
-          (childrenOf[parent.id] = childrenOf[parent.id] ?? []).push(t);
-        } else {
-          roots.push(t);
-        }
+        const chain = headerChain(t, byId);
+        chains.set(t.id, chain);
+        for (const ancestor of chain) asHeader.add(ancestor.id);
       }
-      const ordered = [];
-      const seen = new Set();
-      function visit(task) {
-        if (seen.has(task.id)) return;
-        seen.add(task.id);
-        ordered.push(task);
-        (childrenOf[task.id] ?? []).forEach(visit);
-      }
-      roots.forEach(visit);
-      band.tasks.forEach(visit); // a parent cycle has no root; never drop its cards
 
       // A group sits where its first card would have been.
-      const groups = new Map();
-      const items = [];
-      for (const t of ordered) {
-        const epic = epicOf(t, byId);
-        if (!epic) { items.push({ task: t }); continue; }
-        let group = groups.get(epic.id);
-        if (!group) { group = { epic, tasks: [] }; groups.set(epic.id, group); items.push(group); }
-        group.tasks.push(t);
+      const root = { items: [] };
+      for (const t of band.tasks) {
+        if (asHeader.has(t.id)) continue;
+        let node = root;
+        for (const ancestor of chains.get(t.id)) {
+          let child = node.items.find(item => item.header?.id === ancestor.id);
+          if (!child) { child = { header: ancestor, items: [] }; node.items.push(child); }
+          node = child;
+        }
+        node.items.push({ card: t });
       }
 
-      // An epic with cards in this band is shown as the header of their group.
-      const html = items
-        .filter(item => !(item.task && groups.has(item.task.id)))
-        .map(item => {
-          if (item.task) return renderCard(item.task);
-          const epic = item.epic;
-          const status = epic.status !== colKey
-            ? `<span class="epic-status">${esc(STATUS_LABELS[epic.status] ?? epic.status)}</span>`
-            : '';
+      function renderItems(node) {
+        return node.items.map(item => {
+          if (item.card) return renderCard(item.card, !!node.header && item.card.parent === node.header.id);
+          const kind = item.header.type === 'epic' ? 'epic' : 'task';
           return `
-            <div class="epic-group">
-              <div class="epic-header" data-id="${esc(epic.id)}" title="${esc(epic.id + ' — ' + epic.title)}">
-                <span class="epic-id">${esc(epic.id)}</span>
-                <span class="epic-title">${esc(epic.title)}</span>${status}
-                <button class="open-btn" type="button" title="Open details" aria-label="Open details">→</button>
-              </div>
-              ${item.tasks.map(t => renderCard(t, t.parent === epic.id)).join('')}
+            <div class="${kind}-group">
+              ${renderGroupHeader(item.header, colKey)}
+              ${renderItems(item)}
             </div>
           `;
         }).join('');
+      }
 
       return `
         <div class="band">
@@ -853,7 +869,7 @@
             <span class="band-label">${esc(PRIORITY_LABELS[band.priority] ?? band.priority)}</span>
             <span class="band-count">${band.tasks.length}</span>
           </div>
-          ${html}
+          ${renderItems(root)}
         </div>
       `;
     }
@@ -935,7 +951,7 @@
       if (selectedId && !allTasks.some(t => t.id === selectedId)) selectedId = null;
       const related = selectedId ? descendantIds(selectedId) : new Set();
       board.classList.toggle('has-selection', selectedId !== null);
-      board.querySelectorAll('.card, .epic-header').forEach(el => {
+      board.querySelectorAll('.card, .group-header').forEach(el => {
         el.classList.toggle('is-selected', el.dataset.id === selectedId);
         el.classList.toggle('is-related', related.has(el.dataset.id));
       });
@@ -954,7 +970,7 @@
 
     // One delegated listener: the board's DOM is rebuilt on every refresh.
     document.getElementById('board-wrapper').addEventListener('click', e => {
-      const item = e.target.closest('.card, .epic-header');
+      const item = e.target.closest('.card, .group-header');
       if (!item) return clearSelection(); // clicked empty space
       if (e.target.closest('.open-btn')) return openDetail(item.dataset.id);
       selectTask(item.dataset.id);
@@ -1059,7 +1075,7 @@
     function goToTask(id) {
       selectedId = id;
       applyHighlight();
-      document.querySelector('.card.is-selected, .epic-header.is-selected')
+      document.querySelector('.card.is-selected, .group-header.is-selected')
         ?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
       openDetail(id);
     }
